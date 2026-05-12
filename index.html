@@ -1,0 +1,832 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Bulk Week A/B Timetable Converter</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <style>
+    :root {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: #1f2937;
+      background: #f6f7f9;
+    }
+
+    body {
+      margin: 0;
+      padding: 32px;
+    }
+
+    .card {
+      max-width: 1050px;
+      margin: 0 auto;
+      background: white;
+      padding: 28px;
+      border-radius: 20px;
+      box-shadow: 0 12px 36px rgba(0,0,0,0.08);
+    }
+
+    h1 {
+      margin-top: 0;
+    }
+
+    .muted {
+      color: #6b7280;
+    }
+
+    .section {
+      border: 1px solid #e5e7eb;
+      border-radius: 14px;
+      padding: 16px;
+      margin: 18px 0;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+
+    .term {
+      background: #fafafa;
+      border: 1px solid #e5e7eb;
+      border-radius: 14px;
+      padding: 14px;
+      margin: 12px 0;
+    }
+
+    label {
+      display: block;
+      margin: 10px 0 6px;
+      font-weight: 650;
+    }
+
+    input, textarea {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 9px 10px;
+      border: 1px solid #d1d5db;
+      border-radius: 9px;
+      font: inherit;
+    }
+
+    textarea {
+      min-height: 70px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+
+    button {
+      border: 0;
+      border-radius: 12px;
+      padding: 11px 16px;
+      font: inherit;
+      font-weight: 700;
+      background: #111827;
+      color: white;
+      cursor: pointer;
+    }
+
+    button.secondary {
+      margin-left: 8px;
+      background: #e5e7eb;
+      color: #111827;
+    }
+
+    button:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+
+    .status {
+      margin-top: 14px;
+      padding: 12px;
+      border-radius: 12px;
+      background: #f3f4f6;
+      white-space: pre-wrap;
+    }
+
+    .danger {
+      background: #fef2f2;
+      color: #991b1b;
+    }
+
+    .ok {
+      background: #ecfdf5;
+      color: #065f46;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 14px;
+      font-size: 14px;
+    }
+
+    th, td {
+      border-bottom: 1px solid #e5e7eb;
+      text-align: left;
+      padding: 8px;
+    }
+  </style>
+</head>
+<body>
+<div class="card">
+  <h1>Bulk Week A/B Timetable Converter</h1>
+  <p class="muted">
+    Upload multiple timetable .ics files, convert them into recurring Week A/B calendars,
+    and download one ZIP file containing all outputs. A suspiciously practical outcome.
+  </p>
+
+  <div class="section">
+    <h2>1. Upload timetable files</h2>
+    <input type="file" id="icsFiles" accept=".ics,text/calendar" multiple>
+  </div>
+
+  <div class="section">
+    <h2>2. Academic year settings</h2>
+
+    <div class="grid">
+      <div>
+        <label>Timezone</label>
+        <input id="timezone" value="Asia/Kuala_Lumpur">
+      </div>
+
+      <div>
+        <label>Academic year label</label>
+        <input id="academicYear" value="2026-2027">
+      </div>
+    </div>
+
+    <div id="terms"></div>
+  </div>
+
+  <button id="convertBtn">Convert and download ZIP</button>
+  <button class="secondary" id="resetBtn">Reset default dates</button>
+
+  <div id="status" class="status">Ready.</div>
+  <div id="summary"></div>
+</div>
+
+<script>
+const DEFAULT_CONFIG = {
+  timezone: "Asia/Kuala_Lumpur",
+  academicYear: "2026-2027",
+  terms: [
+    {
+      name: "Michaelmas",
+      start: "2026-08-25",
+      end: "2026-12-16",
+      excludedRanges: [
+        ["2026-09-15", "2026-09-20"],
+        ["2026-10-16", "2026-10-25"]
+      ],
+      excludedDates: ["2026-08-31"]
+    },
+    {
+      name: "Lent",
+      start: "2027-01-05",
+      end: "2027-03-25",
+      excludedRanges: [
+        ["2027-02-04", "2027-02-14"]
+      ],
+      excludedDates: []
+    },
+    {
+      name: "Summer",
+      start: "2027-04-12",
+      end: "2027-06-25",
+      excludedRanges: [
+        ["2027-05-27", "2027-06-07"]
+      ],
+      excludedDates: []
+    }
+  ]
+};
+
+let config = structuredClone(DEFAULT_CONFIG);
+
+document.getElementById("convertBtn").addEventListener("click", convertBulk);
+document.getElementById("resetBtn").addEventListener("click", () => {
+  config = structuredClone(DEFAULT_CONFIG);
+  renderConfig();
+  setStatus("Default dates restored.");
+});
+
+function setStatus(message, type="") {
+  const el = document.getElementById("status");
+  el.textContent = message;
+  el.className = "status " + type;
+}
+
+function renderConfig() {
+  document.getElementById("timezone").value = config.timezone;
+  document.getElementById("academicYear").value = config.academicYear;
+
+  const container = document.getElementById("terms");
+  container.innerHTML = "";
+
+  config.terms.forEach((term, index) => {
+    const div = document.createElement("div");
+    div.className = "term";
+
+    div.innerHTML = `
+      <h3>${term.name}</h3>
+
+      <div class="grid">
+        <div>
+          <label>Term start</label>
+          <input type="date" data-term="${index}" data-field="start" value="${term.start}">
+        </div>
+
+        <div>
+          <label>Term end</label>
+          <input type="date" data-term="${index}" data-field="end" value="${term.end}">
+        </div>
+      </div>
+
+      <label>Closure ranges (YYYY-MM-DD to YYYY-MM-DD)</label>
+      <textarea data-term="${index}" data-field="excludedRanges">${(term.excludedRanges || []).map(r => r[0] + " to " + r[1]).join("\n")}</textarea>
+
+      <label>Single-day closures</label>
+      <textarea data-term="${index}" data-field="excludedDates">${(term.excludedDates || []).join("\n")}</textarea>
+    `;
+
+    container.appendChild(div);
+  });
+}
+
+function collectConfig() {
+  const updated = structuredClone(config);
+
+  updated.timezone = document.getElementById("timezone").value.trim();
+  updated.academicYear = document.getElementById("academicYear").value.trim();
+
+  document.querySelectorAll("[data-term]").forEach(input => {
+    const idx = Number(input.dataset.term);
+    const field = input.dataset.field;
+
+    if (field === "excludedRanges") {
+      updated.terms[idx].excludedRanges = input.value
+        .split(/\n/)
+        .map(x => x.trim())
+        .filter(Boolean)
+        .map(line => {
+          const parts = line.split(/\s+to\s+/i);
+          return [parts[0].trim(), parts[1].trim()];
+        });
+
+    } else if (field === "excludedDates") {
+      updated.terms[idx].excludedDates = input.value
+        .split(/\n/)
+        .map(x => x.trim())
+        .filter(Boolean);
+
+    } else {
+      updated.terms[idx][field] = input.value;
+    }
+  });
+
+  return updated;
+}
+
+async function convertBulk() {
+  const files = Array.from(document.getElementById("icsFiles").files);
+
+  if (!files.length) {
+    setStatus("Choose at least one .ics file first.", "danger");
+    return;
+  }
+
+  const button = document.getElementById("convertBtn");
+  button.disabled = true;
+
+  try {
+    const updatedConfig = collectConfig();
+    const zip = new JSZip();
+    const summaries = [];
+		const convertedOutputs = [];
+
+    setStatus(`Converting ${files.length} timetable files...`);
+
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+
+      setStatus(`Processing ${i + 1} / ${files.length}: ${file.name}`);
+
+      const text = await file.text();
+      const result = convertIcsText(text, file.name, updatedConfig);
+
+      const outputName = makeOutputFilename(file.name, updatedConfig.academicYear);
+
+      zip.file(outputName, result.content);
+			convertedOutputs.push({
+  		filename: outputName,
+  		content: result.content
+			});
+      summaries.push(result.summary);
+    }
+
+    setStatus("Building ZIP download...");
+
+    if (files.length === 1) {
+
+  const onlyOutput = convertedOutputs[0];
+
+  downloadText(
+    onlyOutput.filename,
+    onlyOutput.content
+  );
+
+} else {
+
+  const blob = await zip.generateAsync({ type: "blob" });
+
+  const zipName = `Timetables ${updatedConfig.academicYear}.zip`;
+
+  downloadBlob(zipName, blob);
+}
+    renderSummary(summaries);
+
+    setStatus(
+      `Converted ${files.length} timetable files and downloaded ZIP.`,
+      "ok"
+    );
+
+  } catch (err) {
+    console.error(err);
+    setStatus(err.message, "danger");
+
+  } finally {
+    button.disabled = false;
+  }
+}
+
+function renderSummary(summaries) {
+  let rows = summaries.map(summary => `
+    <tr>
+      <td>${escapeHtml(summary.filename)}</td>
+      <td>${summary.originalEvents}</td>
+      <td>${summary.templateEvents}</td>
+      <td>${summary.recurringSeries}</td>
+      <td>${summary.exclusions}</td>
+    </tr>
+  `).join("");
+
+  document.getElementById("summary").innerHTML = `
+    <table>
+      <thead>
+        <tr>
+          <th>File</th>
+          <th>Original events</th>
+          <th>Template events</th>
+          <th>Recurring series</th>
+          <th>Exclusions</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${rows}
+      </tbody>
+    </table>
+  `;
+}
+
+function downloadBlob(filename, blob) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function makeOutputFilename(filename, academicYear) {
+  return String(filename).replace(/\.ics$/i, "") + " " + academicYear + ".ics";
+}
+
+function escapeHtml(str) {
+  return String(str).replace(/[&<>"']/g, s => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#039;'
+  }[s]));
+}
+
+/* ---------- ICS helpers ---------- */
+
+function unfoldIcsLines(text) {
+  const rawLines = String(text).split(/\r?\n/);
+  const lines = [];
+  rawLines.forEach(line => {
+    if ((line.startsWith(" ") || line.startsWith("\t")) && lines.length) {
+      lines[lines.length - 1] += line.substring(1);
+    } else {
+      lines.push(line);
+    }
+  });
+  return lines;
+}
+
+function foldIcsLine(line) {
+  const limit = 75;
+  if (line.length <= limit) return line;
+  const out = [];
+  let rest = line;
+  while (rest.length > limit) {
+    out.push(rest.substring(0, limit));
+    rest = " " + rest.substring(limit);
+  }
+  out.push(rest);
+  return out.join("\r\n");
+}
+
+function escapeIcsText(value) {
+  return String(value || "")
+    .replace(/\\/g, "\\\\")
+    .replace(/\n/g, "\\n")
+    .replace(/,/g, "\\,")
+    .replace(/;/g, "\\;");
+}
+
+function unescapeIcsText(value) {
+  return String(value || "")
+    .replace(/\\n/g, "\n")
+    .replace(/\\,/g, ",")
+    .replace(/\\;/g, ";")
+    .replace(/\\\\/g, "\\");
+}
+
+function parseIcsDateTime(value) {
+  value = String(value || "").trim().replace(/Z$/, "");
+  const datePart = value.substring(0, 8);
+  const year = Number(datePart.substring(0, 4));
+  const month = Number(datePart.substring(4, 6)) - 1;
+  const day = Number(datePart.substring(6, 8));
+
+  if (!value.includes("T")) {
+    return new Date(year, month, day, 0, 0, 0);
+  }
+
+  const timePart = value.split("T")[1];
+  const hour = Number(timePart.substring(0, 2));
+  const minute = Number(timePart.substring(2, 4));
+  const second = timePart.length >= 6 ? Number(timePart.substring(4, 6)) : 0;
+  return new Date(year, month, day, hour, minute, second);
+}
+
+function formatIcsDateTime(dt) {
+  return [
+    dt.getFullYear(),
+    pad2(dt.getMonth() + 1),
+    pad2(dt.getDate())
+  ].join("") + "T" + [
+    pad2(dt.getHours()),
+    pad2(dt.getMinutes()),
+    pad2(dt.getSeconds())
+  ].join("");
+}
+
+function formatUtcDateTimeZ(dt) {
+  return dt.getUTCFullYear()
+    + pad2(dt.getUTCMonth() + 1)
+    + pad2(dt.getUTCDate())
+    + "T"
+    + pad2(dt.getUTCHours())
+    + pad2(dt.getUTCMinutes())
+    + pad2(dt.getUTCSeconds())
+    + "Z";
+}
+
+function pad2(n) {
+  return String(n).padStart(2, "0");
+}
+
+function parseVEvents(icsText) {
+  const lines = unfoldIcsLines(icsText);
+  const events = [];
+  let current = null;
+
+  lines.forEach(line => {
+    if (line === "BEGIN:VEVENT") {
+      current = {};
+    } else if (line === "END:VEVENT") {
+      if (current) events.push(current);
+      current = null;
+    } else if (current && line.includes(":")) {
+      const idx = line.indexOf(":");
+      const left = line.substring(0, idx);
+      const value = line.substring(idx + 1);
+      const prop = left.split(";")[0].toUpperCase();
+      current[prop] = value;
+    }
+  });
+
+  return events;
+}
+
+function dateOnly(dt) {
+  return new Date(dt.getFullYear(), dt.getMonth(), dt.getDate());
+}
+
+function dateKey(dt) {
+  return dt.getFullYear() + "-" + pad2(dt.getMonth() + 1) + "-" + pad2(dt.getDate());
+}
+
+function parseDateOnly(s) {
+  const parts = String(s).split("-").map(Number);
+  return new Date(parts[0], parts[1] - 1, parts[2]);
+}
+
+function addDays(dt, days) {
+  const d = new Date(dt.getFullYear(), dt.getMonth(), dt.getDate());
+  d.setDate(d.getDate() + days);
+  return d;
+}
+
+function daysBetween(a, b) {
+  return Math.round((dateOnly(a).getTime() - dateOnly(b).getTime()) / 86400000);
+}
+
+function getMonday(dt) {
+  const d = dateOnly(dt);
+  const day = d.getDay();
+  const offset = day === 0 ? -6 : 1 - day;
+  return addDays(d, offset);
+}
+
+function weekdayMon0(dt) {
+  return (dt.getDay() + 6) % 7;
+}
+
+function getTemplateWindow(events) {
+  const starts = events
+    .filter(e => e.DTSTART && e.DTEND)
+    .map(e => parseIcsDateTime(e.DTSTART))
+    .sort((a, b) => a - b);
+
+  if (!starts.length) throw new Error("No usable events found in ICS.");
+
+  const firstMonday = getMonday(starts[0]);
+  const endSecondWeek = addDays(firstMonday, 14);
+  return { firstMonday, endSecondWeek };
+}
+
+function weekLabel(dt, firstMonday) {
+  return daysBetween(dt, firstMonday) < 7 ? "A" : "B";
+}
+
+function isInFirstTwoWeeks(dt, firstMonday, endSecondWeek) {
+  const d = dateOnly(dt);
+  return d >= firstMonday && d < endSecondWeek;
+}
+
+function buildExcludedDateSet(term) {
+  const set = {};
+
+  (term.excludedRanges || []).forEach(range => {
+    let start = parseDateOnly(range[0]);
+    const end = parseDateOnly(range[1]);
+    while (start <= end) {
+      set[dateKey(start)] = true;
+      start = addDays(start, 1);
+    }
+  });
+
+  (term.excludedDates || []).forEach(d => {
+    set[String(d)] = true;
+  });
+
+  return set;
+}
+
+function firstMatchingDate(termStart, week, weekday) {
+  const base = week === "A" ? termStart : addDays(termStart, 7);
+  const baseWeekday = weekdayMon0(base);
+  const delta = (weekday - baseWeekday + 7) % 7;
+  return addDays(base, delta);
+}
+
+function makeTimeDate(datePart, timeSource) {
+  return new Date(
+    datePart.getFullYear(),
+    datePart.getMonth(),
+    datePart.getDate(),
+    timeSource.getHours(),
+    timeSource.getMinutes(),
+    timeSource.getSeconds()
+  );
+}
+
+function timezoneBlock(tzid) {
+  return [
+    "BEGIN:VTIMEZONE",
+    "TZID:" + tzid,
+    "X-LIC-LOCATION:" + tzid,
+    "BEGIN:STANDARD",
+    "DTSTART:19700101T000000",
+    "TZOFFSETFROM:+0800",
+    "TZOFFSETTO:+0800",
+    "TZNAME:+08",
+    "END:STANDARD",
+    "END:VTIMEZONE"
+  ];
+}
+
+function makeEventBlock(template, startDt, endDt, term, timezoneName, filename, excludedDateTimes) {
+  const dtstamp = formatUtcDateTimeZ(new Date());
+  const termEnd = parseDateOnly(term.end);
+  const untilLocal = new Date(termEnd.getFullYear(), termEnd.getMonth(), termEnd.getDate(), 23, 59, 59);
+  const untilUtc = new Date(untilLocal.getTime() - 8 * 60 * 60 * 1000);
+  const uidSeed = String(filename).replace(/[^A-Za-z0-9_-]/g, "_");
+  const uid = uidSeed + "-" + crypto.randomUUID() + "@week-ab-converter.local";
+
+  const lines = [
+    "BEGIN:VEVENT",
+    "UID:" + uid,
+    "DTSTAMP:" + dtstamp,
+    "SUMMARY:" + escapeIcsText(template.summary),
+    "DESCRIPTION:" + escapeIcsText((template.description || "") + "\n\nGenerated from " + filename + ". Term: " + term.name + ". Week " + template.week + "."),
+    "LOCATION:" + escapeIcsText(template.location),
+    "DTSTART;TZID=" + timezoneName + ":" + formatIcsDateTime(startDt),
+    "DTEND;TZID=" + timezoneName + ":" + formatIcsDateTime(endDt),
+    "RRULE:FREQ=WEEKLY;INTERVAL=2;UNTIL=" + formatUtcDateTimeZ(untilUtc)
+  ];
+
+  if (excludedDateTimes.length) {
+    lines.push("EXDATE;TZID=" + timezoneName + ":" + excludedDateTimes.map(formatIcsDateTime).join(","));
+  }
+
+  lines.push("END:VEVENT");
+  return lines.map(foldIcsLine).join("\r\n");
+}
+
+function convertIcsText(icsText, filename, config) {
+  const timezoneName = config.timezone || DEFAULT_CONFIG.timezone;
+  const sourceEvents = parseVEvents(icsText).filter(e => e.DTSTART && e.DTEND && e.SUMMARY);
+
+  if (!sourceEvents.length) throw new Error("No events with DTSTART, DTEND and SUMMARY found.");
+
+  const win = getTemplateWindow(sourceEvents);
+  const templateEvents = [];
+  const seen = {};
+
+  sourceEvents.forEach(e => {
+    const start = parseIcsDateTime(e.DTSTART);
+    const end = parseIcsDateTime(e.DTEND);
+
+    if (!isInFirstTwoWeeks(start, win.firstMonday, win.endSecondWeek)) return;
+
+    const summary = unescapeIcsText(e.SUMMARY || "Untitled");
+    const description = unescapeIcsText(e.DESCRIPTION || "");
+    const location = unescapeIcsText(e.LOCATION || "");
+
+    const key = [
+      weekLabel(start, win.firstMonday),
+      weekdayMon0(start),
+      start.getHours(), start.getMinutes(), start.getSeconds(),
+      end.getHours(), end.getMinutes(), end.getSeconds(),
+      summary,
+      location
+    ].join("|");
+
+    if (seen[key]) return;
+    seen[key] = true;
+
+    templateEvents.push({
+      week: weekLabel(start, win.firstMonday),
+      weekday: weekdayMon0(start),
+      startTime: start,
+      endTime: end,
+      summary,
+      description,
+      location
+    });
+  });
+
+  const outputEvents = [];
+  let exclusionCount = 0;
+
+  (config.terms || []).forEach(term => {
+    const termStart = parseDateOnly(term.start);
+    const termEnd = parseDateOnly(term.end);
+    const excluded = buildExcludedDateSet(term);
+
+    templateEvents.forEach(template => {
+      const firstDate = firstMatchingDate(termStart, template.week, template.weekday);
+      if (firstDate > termEnd) return;
+
+      const startDt = makeTimeDate(firstDate, template.startTime);
+      let endDt = makeTimeDate(firstDate, template.endTime);
+
+      if (endDt <= startDt) {
+        endDt = new Date(endDt.getTime() + 24 * 60 * 60 * 1000);
+      }
+
+      const exDateTimes = [];
+      let occurrence = new Date(firstDate);
+      while (occurrence <= termEnd) {
+        if (excluded[dateKey(occurrence)]) {
+          exDateTimes.push(makeTimeDate(occurrence, template.startTime));
+        }
+        occurrence = addDays(occurrence, 14);
+      }
+
+      exclusionCount += exDateTimes.length;
+      outputEvents.push(makeEventBlock(template, startDt, endDt, term, timezoneName, filename, exDateTimes));
+    });
+  });
+
+  const calLines = [
+    "BEGIN:VCALENDAR",
+    "VERSION:2.0",
+    "PRODID:-//Week AB Timetable Converter Static Web//EN",
+    "CALSCALE:GREGORIAN",
+    "X-WR-CALNAME:" + escapeIcsText(filename.replace(/\.ics$/i, "") + " Clean Week A/B Timetable"),
+    "X-WR-TIMEZONE:" + timezoneName
+  ]
+    .concat(timezoneBlock(timezoneName))
+    .concat(outputEvents)
+    .concat(["END:VCALENDAR"]);
+
+  return {
+    content: calLines.join("\r\n") + "\r\n",
+    summary: {
+      filename,
+      originalEvents: sourceEvents.length,
+      templateEvents: templateEvents.length,
+      recurringSeries: outputEvents.length,
+      exclusions: exclusionCount,
+      firstTemplateMonday: dateKey(win.firstMonday),
+      status: "OK"
+    }
+  };
+}
+
+function makeOutputFilename(filename) {
+  const yearLabel = document.getElementById("academicYear").value.trim() || "AcademicYear";
+  return String(filename).replace(/\.ics$/i, "") + " " + yearLabel + ".ics";
+}
+
+function downloadText(filename, content) {
+  const blob = new Blob([content], { type: "text/calendar;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function renderSummary(summaries) {
+  if (!Array.isArray(summaries)) {
+    summaries = [summaries];
+  }
+
+  let rows = summaries.map(summary => `
+    <tr>
+      <td>${escapeHtml(summary.filename)}</td>
+      <td>${summary.originalEvents}</td>
+      <td>${summary.templateEvents}</td>
+      <td>${summary.recurringSeries}</td>
+      <td>${summary.exclusions}</td>
+      <td>${summary.firstTemplateMonday}</td>
+    </tr>
+  `).join("");
+
+  document.getElementById("summary").innerHTML = `
+    <table>
+      <thead>
+        <tr>
+          <th>File</th>
+          <th>Original events</th>
+          <th>Template events</th>
+          <th>Recurring series</th>
+          <th>Exclusions</th>
+          <th>First template Monday</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${rows}
+      </tbody>
+    </table>
+  `;
+}
+
+function escapeHtml(str) {
+  return String(str).replace(/[&<>"']/g, s => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#039;"
+  }[s]));
+}
+
+renderConfig();
+</script>
+</body>
+</html>
