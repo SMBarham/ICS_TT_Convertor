@@ -347,9 +347,10 @@ async function convertBulk() {
     renderSummary(summaries);
 
     setStatus(
-      `Converted ${files.length} timetable files and downloaded ZIP.`,
-      "ok"
-    );
+  		files.length === 1
+    	? "Converted 1 timetable file and downloaded ICS."
+    	: `Converted ${files.length} timetable files and downloaded ZIP.`, "ok"
+	);
 
   } catch (err) {
     console.error(err);
