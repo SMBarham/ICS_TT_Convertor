@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Bulk Week A/B Timetable Converter</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<style>
+:root{
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color:#172033;
+  background:
+    radial-gradient(circle at top left, rgba(79,70,229,.12), transparent 28rem),
+    radial-gradient(circle at top right, rgba(14,165,233,.10), transparent 26rem),
+    #f5f7fb;
+}
+*{box-sizing:border-box}
+body{margin:0;padding:32px}
+.card{
+  max-width:1180px;
+  margin:0 auto;
+  background:rgba(255,255,255,.94);
+  backdrop-filter: blur(8px);
+  padding:30px;
+  border-radius:28px;
+  box-shadow:0 18px 50px rgba(15,23,42,.10);
+  border:1px solid rgba(255,255,255,.8);
+}
+.header{
+  display:flex;
+  justify-content:space-between;
+  gap:18px;
+  align-items:flex-start;
+  margin-bottom:22px;
+}
+h1{margin:0 0 8px;font-size:34px;letter-spacing:-.03em}
+h2{margin:0 0 12px;font-size:20px}
+h3{margin:0;font-size:17px}
+.muted{color:#64748b;margin:0;line-height:1.5}
+.section{
+  background:#fff;
+  border:1px solid #e7ecf3;
+  border-radius:22px;
+  padding:20px;
+  margin:18px 0;
+  box-shadow:0 8px 24px rgba(15,23,42,.045);
+}
+.section-title{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  margin-bottom:14px;
+}
+.badge{
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  border-radius:999px;
+  padding:5px 10px;
+  font-size:12px;
+  font-weight:700;
+  background:#eef2ff;
+  color:#3730a3;
+  white-space:nowrap;
+}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+label{display:block;margin:10px 0 6px;font-weight:700;font-size:13px;color:#475569}
+input,select{
+  width:100%;
+  padding:10px 11px;
+  border:1px solid #d8dee8;
+  border-radius:12px;
+  font:inherit;
+  background:#fff;
+  color:#172033;
+}
+input:focus,select:focus{
+  outline:3px solid rgba(79,70,229,.15);
+  border-color:#818cf8;
+}
+button{
+  border:0;
+  border-radius:14px;
+  padding:11px 16px;
+  font:inherit;
+  font-weight:800;
+  background:#111827;
+  color:white;
+  cursor:pointer;
+  box-shadow:0 8px 18px rgba(17,24,39,.18);
+}
+button.secondary{
+  background:#eef2f7;
+  color:#172033;
+  box-shadow:none;
+}
+button.small{
+  padding:8px 11px;
+  border-radius:11px;
+  font-size:13px;
+}
+button.danger{
+  background:#fff1f2;
+  color:#be123c;
+  box-shadow:none;
+}
+button:disabled{opacity:.55;cursor:not-allowed}
+.actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}
+.status{
+  margin-top:16px;
+  padding:14px 16px;
+  border-radius:16px;
+  background:#f1f5f9;
+  color:#334155;
+  white-space:pre-wrap;
+  border:1px solid #e2e8f0;
+}
+.status.danger{background:#fff1f2;color:#9f1239;border-color:#fecdd3}
+.status.ok{background:#ecfdf5;color:#065f46;border-color:#bbf7d0}
+.hint{font-size:13px;color:#64748b;margin:8px 0 0;line-height:1.45}
+.upload-box{
+  border:2px dashed #cbd5e1;
+  border-radius:18px;
+  padding:18px;
+  background:#f8fafc;
+}
+.terms-grid{
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:14px;
+}
+.term-card{
+  border:1px solid #e2e8f0;
+  border-radius:18px;
+  padding:15px;
+  background:linear-gradient(180deg,#ffffff,#f8fafc);
+}
+.term-card h3{margin-bottom:10px}
+.closure-group{
+  border:1px solid #e2e8f0;
+  border-radius:20px;
+  overflow:hidden;
+  background:#fff;
+  margin:14px 0;
+}
+.closure-group-header{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  padding:14px 16px;
+  background:#f8fafc;
+  border-bottom:1px solid #e2e8f0;
+}
+.closure-list{
+  display:grid;
+  gap:10px;
+  padding:14px;
+}
+.closure-row{
+  display:grid;
+  grid-template-columns:140px 150px 150px minmax(180px,1fr) auto;
+  gap:10px;
+  align-items:end;
+  padding:12px;
+  border:1px solid #edf1f7;
+  border-radius:16px;
+  background:#fff;
+}
+.type-pill{
+  display:inline-flex;
+  border-radius:999px;
+  padding:5px 9px;
+  font-size:12px;
+  font-weight:800;
+}
+.pill-Half-term{background:#e0f2fe;color:#075985}
+.pill-Exeat{background:#fef3c7;color:#92400e}
+.pill-Public-holiday{background:#dcfce7;color:#166534}
+.pill-Closure{background:#ede9fe;color:#5b21b6}
+.pill-Staff-training{background:#fce7f3;color:#9d174d}
+.pill-Other{background:#e5e7eb;color:#374151}
+table{
+  width:100%;
+  border-collapse:collapse;
+  margin-top:14px;
+  font-size:14px;
+  background:#fff;
+  border-radius:16px;
+  overflow:hidden;
+}
+th,td{border-bottom:1px solid #e5e7eb;text-align:left;padding:10px;vertical-align:middle}
+th{color:#475569;background:#f8fafc;font-weight:800}
+@media(max-width:900px){
+  body{padding:18px}
+  .header{display:block}
+  .grid,.terms-grid{grid-template-columns:1fr}
+  .closure-row{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+<div class="card">
+<div class="header">
+  <div>
+    <h1>Bulk Week A/B Timetable Converter</h1>
+    <p class="muted">Upload one or more timetable .ics files, convert them into recurring Week A/B calendars, and download either a single .ics or a ZIP.</p>
+  </div>
+  <span class="badge">Runs locally in your browser</span>
+</div>
+
+<div class="section">
+<h2>1. Upload timetable files</h2>
+<input type="file" id="icsFiles" accept=".ics,text/calendar" multiple>
+<p class="hint">One file downloads as an .ics. Multiple files download as a ZIP.</p>
+</div>
+
+<div class="section">
+<h2>2. Academic year settings</h2>
+<div class="grid">
+<div><label>Timezone</label><input id="timezone" value="Asia/Kuala_Lumpur"></div>
+<div><label>Academic year label</label><input id="academicYear" value="2026-2027"></div>
+</div>
+<div class="section-title">
+  <h3>Terms</h3>
+  <span class="badge">Each term starts Week A</span>
+</div>
+<div class="terms-grid" id="termsBody"></div>
+<p class="hint">Term end dates are inclusive. If the final day is a teaching day, keep it as the end date.</p>
+</div>
+
+<div class="section">
+<h2>3. Closures and exclusions</h2>
+<p class="muted">Use the first fully closed day to the last fully closed day. Dates are inclusive. For a single-day closure, use the same start and end date.</p>
+<div id="closuresBody"></div>
+<div class="actions"><button class="secondary" id="resetBtn">Reset default dates</button></div>
+</div>
+
+<div class="actions"><button id="convertBtn">Convert calendars</button></div>
+<div id="status" class="status">Ready.</div>
+<div id="summary"></div>
+</div>
+
+<script>
+const DEFAULT_CONFIG={
+timezone:"Asia/Kuala_Lumpur",
+academicYear:"2026-2027",
+terms:[
+{name:"Michaelmas",start:"2026-08-25",end:"2026-12-16"},
+{name:"Lent",start:"2027-01-05",end:"2027-03-25"},
+{name:"Summer",start:"2027-04-12",end:"2027-06-25"}
+],
+closures:[
+{term:"Michaelmas",type:"Exeat",start:"2026-09-16",end:"2026-09-20",note:"September exeat"},
+{term:"Michaelmas",type:"Half term",start:"2026-10-17",end:"2026-10-25",note:"Half term"},
+{term:"Michaelmas",type:"Exeat",start:"2026-11-06",end:"2026-11-09",note:"November exeat"},
+{term:"Michaelmas",type:"Public holiday",start:"2026-08-31",end:"2026-08-31",note:"National Day"},
+{term:"Lent",type:"Half term",start:"2027-02-05",end:"2027-02-14",note:"Half term"},
+{term:"Lent",type:"Exeat",start:"2027-03-10",end:"2027-03-14",note:"March exeat"},
+{term:"Lent",type:"Public holiday",start:"2027-03-23",end:"2027-03-23",note:"Sultan of Johor's Birthday"},
+{term:"Summer",type:"Exeat",start:"2027-05-15",end:"2027-05-17",note:"May exeat"},
+{term:"Summer",type:"Half term",start:"2027-05-28",end:"2027-06-07",note:"Half term"},
+{term:"Summer",type:"Public holiday",start:"2027-05-01",end:"2027-05-01",note:"Labour Day"}
+]
+};
+let config=structuredClone(DEFAULT_CONFIG);
+
+document.getElementById("convertBtn").addEventListener("click",convertBulk);
+document.getElementById("resetBtn").addEventListener("click",()=>{config=structuredClone(DEFAULT_CONFIG);renderConfig();setStatus("Default dates restored.")});
+
+function setStatus(message,type=""){const el=document.getElementById("status");el.textContent=message;el.className="status "+type}
+function renderConfig(){document.getElementById("timezone").value=config.timezone;document.getElementById("academicYear").value=config.academicYear;renderTerms();renderClosures()}
+function renderTerms(){
+  const container=document.getElementById("termsBody");
+  container.innerHTML="";
+  config.terms.forEach((term,index)=>{
+    const div=document.createElement("div");
+    div.className="term-card";
+    div.innerHTML=`
+      <h3>${escapeHtml(term.name)}</h3>
+      <label>Term name</label>
+      <input data-term-index="${index}" data-field="name" value="${escapeHtml(term.name)}">
+      <div class="grid">
+        <div>
+          <label>Start date</label>
+          <input type="date" data-term-index="${index}" data-field="start" value="${term.start}">
+        </div>
+        <div>
+          <label>End date</label>
+          <input type="date" data-term-index="${index}" data-field="end" value="${term.end}">
+        </div>
+      </div>
+    `;
+    container.appendChild(div);
+  });
+  container.querySelectorAll("input").forEach(input=>{
+    input.addEventListener("change",()=>{
+      const index=Number(input.dataset.termIndex);
+      const field=input.dataset.field;
+      config.terms[index][field]=input.value;
+      if(field==="name")renderClosures();
+    });
+  });
+}
+
+function renderClosures(){
+  const container=document.getElementById("closuresBody");
+  container.innerHTML="";
+  const termNames=getCurrentTermNames();
+
+  termNames.forEach(termName=>{
+    const group=document.createElement("div");
+    group.className="closure-group";
+
+    const matching=config.closures
+      .map((closure,index)=>({closure,index}))
+      .filter(item=>item.closure.term===termName);
+
+    group.innerHTML=`
+      <div class="closure-group-header">
+        <h3>${escapeHtml(termName)}</h3>
+        <button class="small secondary" data-add-to-term="${escapeHtml(termName)}">Add closure</button>
+        <span class="badge">${matching.length} closure${matching.length===1?"":"s"}</span>
+      </div>
+      <div class="closure-list"></div>
+    `;
+
+    const list=group.querySelector(".closure-list");
+
+    if(!matching.length){
+      const empty=document.createElement("p");
+      empty.className="muted";
+      empty.textContent="No closures listed for this term.";
+      list.appendChild(empty);
+    }
+
+    matching.forEach(({closure,index})=>{
+      const row=document.createElement("div");
+      row.className="closure-row";
+      const pillClass="pill-"+String(closure.type||"Other").replace(/\s+/g,"-");
+
+      row.innerHTML=`
+        <div>
+          <label>Type</label>
+          <select data-closure-index="${index}" data-field="type">
+            ${["Half term","Exeat","Public holiday","Closure","Staff training","Other"].map(type=>`<option value="${type}" ${closure.type===type?"selected":""}>${type}</option>`).join("")}
+          </select>
+        </div>
+        <div>
+          <label>Start date</label>
+          <input type="date" data-closure-index="${index}" data-field="start" value="${closure.start||""}">
+        </div>
+        <div>
+          <label>End date</label>
+          <input type="date" data-closure-index="${index}" data-field="end" value="${closure.end||""}">
+        </div>
+        <div>
+          <label>Notes <span class="type-pill ${pillClass}">${escapeHtml(closure.type||"Other")}</span></label>
+          <input data-closure-index="${index}" data-field="note" value="${escapeHtml(closure.note||"")}">
+        </div>
+        <div>
+          <button class="small danger" data-delete-closure="${index}">Remove</button>
+        </div>
+      `;
+
+      list.appendChild(row);
+    });
+
+    container.appendChild(group);
+  });
+
+  container.querySelectorAll("[data-add-to-term]").forEach(button=>{
+    button.addEventListener("click",()=>{
+      config.closures.push({
+        term: button.dataset.addToTerm,
+        type: "Closure",
+        start: "",
+        end: "",
+        note: ""
+      });
+      renderClosures();
+    });
+  });
+
+  container.querySelectorAll("[data-closure-index]").forEach(input=>{
+    input.addEventListener("change",()=>{
+      const index=Number(input.dataset.closureIndex);
+      const field=input.dataset.field;
+      config.closures[index][field]=input.value;
+      if(field==="start"&&!config.closures[index].end){
+        config.closures[index].end=input.value;
+      }
+      if(field==="type"){
+        renderClosures();
+      }
+    });
+  });
+
+  container.querySelectorAll("[data-delete-closure]").forEach(button=>{
+    button.addEventListener("click",()=>{
+      config.closures.splice(Number(button.dataset.deleteClosure),1);
+      renderClosures();
+    });
+  });
+}
+
+function getCurrentTermNames(){return config.terms.map(term=>term.name).filter(Boolean)}
+function collectConfig(){const updated=structuredClone(config);updated.timezone=document.getElementById("timezone").value.trim()||"Asia/Kuala_Lumpur";updated.academicYear=document.getElementById("academicYear").value.trim()||"academic-year";document.querySelectorAll("[data-term-index]").forEach(input=>{updated.terms[Number(input.dataset.termIndex)][input.dataset.field]=input.value});validateConfig(updated);return updated}
+function validateConfig(cfg){cfg.terms.forEach(term=>{if(!term.name||!term.start||!term.end)throw new Error("Each term needs a name, start date and end date.");if(parseDateOnly(term.end)<parseDateOnly(term.start))throw new Error(`${term.name}: term end date is before term start date.`)});cfg.closures.forEach((closure,index)=>{if(!closure.term||!closure.start||!closure.end)throw new Error(`Closure row ${index+1} needs a term, start date and end date.`);if(parseDateOnly(closure.end)<parseDateOnly(closure.start))throw new Error(`Closure row ${index+1}: end date is before start date.`)})}
+
+async function convertBulk(){const files=Array.from(document.getElementById("icsFiles").files);if(!files.length){setStatus("Choose at least one .ics file first.","danger");return}const button=document.getElementById("convertBtn");button.disabled=true;try{const updatedConfig=collectConfig();const summaries=[];const convertedOutputs=[];setStatus(`Converting ${files.length} timetable file${files.length===1?"":"s"}...`);for(let i=0;i<files.length;i++){const file=files[i];setStatus(`Processing ${i+1} / ${files.length}: ${file.name}`);const text=await file.text();const result=convertIcsText(text,file.name,updatedConfig);const outputName=makeOutputFilename(file.name,updatedConfig.academicYear);convertedOutputs.push({filename:outputName,content:result.content});summaries.push(result.summary)}if(convertedOutputs.length===1){downloadText(convertedOutputs[0].filename,convertedOutputs[0].content);setStatus("Converted 1 timetable file and downloaded ICS.","ok")}else{setStatus("Building ZIP download...");const zip=new JSZip();convertedOutputs.forEach(output=>zip.file(output.filename,output.content));const blob=await zip.generateAsync({type:"blob"});downloadBlob(`Timetables ${updatedConfig.academicYear}.zip`,blob);setStatus(`Converted ${convertedOutputs.length} timetable files and downloaded ZIP.`,"ok")}renderSummary(summaries)}catch(err){console.error(err);setStatus(err.message,"danger")}finally{button.disabled=false}}
+
+function renderSummary(summaries){if(!Array.isArray(summaries))summaries=[summaries];const rows=summaries.map(summary=>`<tr><td>${escapeHtml(summary.filename)}</td><td>${summary.originalEvents}</td><td>${summary.templateEvents}</td><td>${summary.recurringSeries}</td><td>${summary.exclusions}</td><td>${summary.firstTemplateMonday}</td></tr>`).join("");document.getElementById("summary").innerHTML=`<table><thead><tr><th>File</th><th>Original events</th><th>Template events</th><th>Recurring series</th><th>Exclusions</th><th>First template Monday</th></tr></thead><tbody>${rows}</tbody></table>`}
+function makeOutputFilename(filename,academicYear){return String(filename).replace(/\.ics$/i,"")+" "+academicYear+".ics"}
+function downloadText(filename,content){downloadBlob(filename,new Blob([content],{type:"text/calendar;charset=utf-8"}))}
+function downloadBlob(filename,blob){const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download=filename;document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url)}
+
+function unfoldIcsLines(text){const rawLines=String(text).split(/\r?\n/);const lines=[];rawLines.forEach(line=>{if((line.startsWith(" ")||line.startsWith("\t"))&&lines.length){lines[lines.length-1]+=line.substring(1)}else{lines.push(line)}});return lines}
+function foldIcsLine(line){const limit=75;if(line.length<=limit)return line;const out=[];let rest=line;while(rest.length>limit){out.push(rest.substring(0,limit));rest=" "+rest.substring(limit)}out.push(rest);return out.join("\r\n")}
+function escapeIcsText(value){return String(value||"").replace(/\\/g,"\\\\").replace(/\n/g,"\\n").replace(/,/g,"\\,").replace(/;/g,"\\;")}
+function unescapeIcsText(value){return String(value||"").replace(/\\n/g,"\n").replace(/\\,/g,",").replace(/\\;/g,";").replace(/\\\\/g,"\\")}
+function parseIcsDateTime(value){value=String(value||"").trim().replace(/Z$/,"");const datePart=value.substring(0,8);const year=Number(datePart.substring(0,4));const month=Number(datePart.substring(4,6))-1;const day=Number(datePart.substring(6,8));if(!value.includes("T"))return new Date(year,month,day,0,0,0);const timePart=value.split("T")[1];const hour=Number(timePart.substring(0,2));const minute=Number(timePart.substring(2,4));const second=timePart.length>=6?Number(timePart.substring(4,6)):0;return new Date(year,month,day,hour,minute,second)}
+function formatIcsDateTime(dt){return [dt.getFullYear(),pad2(dt.getMonth()+1),pad2(dt.getDate())].join("")+"T"+[pad2(dt.getHours()),pad2(dt.getMinutes()),pad2(dt.getSeconds())].join("")}
+function formatUtcDateTimeZ(dt){return dt.getUTCFullYear()+pad2(dt.getUTCMonth()+1)+pad2(dt.getUTCDate())+"T"+pad2(dt.getUTCHours())+pad2(dt.getUTCMinutes())+pad2(dt.getUTCSeconds())+"Z"}
+function pad2(n){return String(n).padStart(2,"0")}
+function parseVEvents(icsText){const lines=unfoldIcsLines(icsText);const events=[];let current=null;lines.forEach(line=>{if(line==="BEGIN:VEVENT"){current={}}else if(line==="END:VEVENT"){if(current)events.push(current);current=null}else if(current&&line.includes(":")){const idx=line.indexOf(":");const left=line.substring(0,idx);const value=line.substring(idx+1);const prop=left.split(";")[0].toUpperCase();current[prop]=value}});return events}
+function dateOnly(dt){return new Date(dt.getFullYear(),dt.getMonth(),dt.getDate())}
+function dateKey(dt){return dt.getFullYear()+"-"+pad2(dt.getMonth()+1)+"-"+pad2(dt.getDate())}
+function parseDateOnly(s){const parts=String(s).split("-").map(Number);return new Date(parts[0],parts[1]-1,parts[2])}
+function addDays(dt,days){const d=new Date(dt.getFullYear(),dt.getMonth(),dt.getDate());d.setDate(d.getDate()+days);return d}
+function daysBetween(a,b){return Math.round((dateOnly(a).getTime()-dateOnly(b).getTime())/86400000)}
+function getMonday(dt){const d=dateOnly(dt);const day=d.getDay();const offset=day===0?-6:1-day;return addDays(d,offset)}
+function weekdayMon0(dt){return (dt.getDay()+6)%7}
+function getTemplateWindow(events){const starts=events.filter(e=>e.DTSTART&&e.DTEND).map(e=>parseIcsDateTime(e.DTSTART)).sort((a,b)=>a-b);if(!starts.length)throw new Error("No usable events found in ICS.");const firstMonday=getMonday(starts[0]);return{firstMonday,endSecondWeek:addDays(firstMonday,14)}}
+function weekLabel(dt,firstMonday){return daysBetween(dt,firstMonday)<7?"A":"B"}
+function isInFirstTwoWeeks(dt,firstMonday,endSecondWeek){const d=dateOnly(dt);return d>=firstMonday&&d<endSecondWeek}
+function buildExcludedDateSet(term,closures){const set={};closures.filter(closure=>closure.term===term.name).forEach(closure=>{let start=parseDateOnly(closure.start);const end=parseDateOnly(closure.end);while(start<=end){set[dateKey(start)]=true;start=addDays(start,1)}});return set}
+function firstMatchingDate(termStart,week,weekday){const base=week==="A"?termStart:addDays(termStart,7);const baseWeekday=weekdayMon0(base);const delta=(weekday-baseWeekday+7)%7;return addDays(base,delta)}
+function makeTimeDate(datePart,timeSource){return new Date(datePart.getFullYear(),datePart.getMonth(),datePart.getDate(),timeSource.getHours(),timeSource.getMinutes(),timeSource.getSeconds())}
+function timezoneBlock(tzid){return["BEGIN:VTIMEZONE","TZID:"+tzid,"X-LIC-LOCATION:"+tzid,"BEGIN:STANDARD","DTSTART:19700101T000000","TZOFFSETFROM:+0800","TZOFFSETTO:+0800","TZNAME:+08","END:STANDARD","END:VTIMEZONE"]}
+function uuid(){if(crypto&&crypto.randomUUID)return crypto.randomUUID();return"xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g,c=>{const r=Math.random()*16|0;const v=c==="x"?r:(r&0x3|0x8);return v.toString(16)})}
+function makeEventBlock(template,startDt,endDt,term,timezoneName,filename,excludedDateTimes){const dtstamp=formatUtcDateTimeZ(new Date());const termEnd=parseDateOnly(term.end);const untilLocal=new Date(termEnd.getFullYear(),termEnd.getMonth(),termEnd.getDate(),23,59,59);const untilUtc=new Date(untilLocal.getTime()-8*60*60*1000);const uidSeed=String(filename).replace(/[^A-Za-z0-9_-]/g,"_");const uid=uidSeed+"-"+uuid()+"@week-ab-converter.local";const lines=["BEGIN:VEVENT","UID:"+uid,"DTSTAMP:"+dtstamp,"SUMMARY:"+escapeIcsText(template.summary),"DESCRIPTION:"+escapeIcsText((template.description||"")+"\\n\\nGenerated from "+filename+". Term: "+term.name+". Week "+template.week+"."),"LOCATION:"+escapeIcsText(template.location),"DTSTART;TZID="+timezoneName+":"+formatIcsDateTime(startDt),"DTEND;TZID="+timezoneName+":"+formatIcsDateTime(endDt),"RRULE:FREQ=WEEKLY;INTERVAL=2;UNTIL="+formatUtcDateTimeZ(untilUtc)];if(excludedDateTimes.length)lines.push("EXDATE;TZID="+timezoneName+":"+excludedDateTimes.map(formatIcsDateTime).join(","));lines.push("END:VEVENT");return lines.map(foldIcsLine).join("\r\n")}
+function convertIcsText(icsText,filename,config){const timezoneName=config.timezone||DEFAULT_CONFIG.timezone;const sourceEvents=parseVEvents(icsText).filter(e=>e.DTSTART&&e.DTEND&&e.SUMMARY);if(!sourceEvents.length)throw new Error("No events with DTSTART, DTEND and SUMMARY found.");const win=getTemplateWindow(sourceEvents);const templateEvents=[];const seen={};sourceEvents.forEach(e=>{const start=parseIcsDateTime(e.DTSTART);const end=parseIcsDateTime(e.DTEND);if(!isInFirstTwoWeeks(start,win.firstMonday,win.endSecondWeek))return;const summary=unescapeIcsText(e.SUMMARY||"Untitled");const description=unescapeIcsText(e.DESCRIPTION||"");const location=unescapeIcsText(e.LOCATION||"");const key=[weekLabel(start,win.firstMonday),weekdayMon0(start),start.getHours(),start.getMinutes(),start.getSeconds(),end.getHours(),end.getMinutes(),end.getSeconds(),summary,location].join("|");if(seen[key])return;seen[key]=true;templateEvents.push({week:weekLabel(start,win.firstMonday),weekday:weekdayMon0(start),startTime:start,endTime:end,summary,description,location})});const outputEvents=[];let exclusionCount=0;(config.terms||[]).forEach(term=>{const termStart=parseDateOnly(term.start);const termEnd=parseDateOnly(term.end);const excluded=buildExcludedDateSet(term,config.closures||[]);templateEvents.forEach(template=>{const firstDate=firstMatchingDate(termStart,template.week,template.weekday);if(firstDate>termEnd)return;const startDt=makeTimeDate(firstDate,template.startTime);let endDt=makeTimeDate(firstDate,template.endTime);if(endDt<=startDt)endDt=new Date(endDt.getTime()+24*60*60*1000);const exDateTimes=[];let occurrence=new Date(firstDate);while(occurrence<=termEnd){if(excluded[dateKey(occurrence)])exDateTimes.push(makeTimeDate(occurrence,template.startTime));occurrence=addDays(occurrence,14)}exclusionCount+=exDateTimes.length;outputEvents.push(makeEventBlock(template,startDt,endDt,term,timezoneName,filename,exDateTimes))})});const calLines=["BEGIN:VCALENDAR","VERSION:2.0","PRODID:-//Week AB Timetable Converter Static Web//EN","CALSCALE:GREGORIAN","X-WR-CALNAME:"+escapeIcsText(filename.replace(/\\.ics$/i,"")+" Clean Week A/B Timetable"),"X-WR-TIMEZONE:"+timezoneName].concat(timezoneBlock(timezoneName)).concat(outputEvents).concat(["END:VCALENDAR"]);return{content:calLines.join("\r\n")+"\r\n",summary:{filename,originalEvents:sourceEvents.length,templateEvents:templateEvents.length,recurringSeries:outputEvents.length,exclusions:exclusionCount,firstTemplateMonday:dateKey(win.firstMonday),status:"OK"}}}
+function escapeHtml(str){return String(str).replace(/[&<>"']/g,s=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[s]))}
+renderConfig();
+</script>
+</body>
+</html>
